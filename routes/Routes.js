@@ -1,44 +1,65 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { Alert, TouchableOpacity, View, Text, SafeAreaView, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from 'react-native-vector-icons';
-import { TouchableOpacity, View, Text, StyleSheet, Alert } from 'react-native';
-import Parse from 'parse/react-native.js'; // Importe o Parse configurado
+import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import Parse from 'parse/react-native.js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Home from '../pages/home';
 import Listar from '../pages/listar';
-import Gravar from '../pages/gravar';
-import { getCurrentPositionAsync } from 'expo-location'; // Para obter a localização atual
+
+// Função para inicializar o Parse SDK
+const initializeParse = () => {
+  Parse.setAsyncStorage(AsyncStorage);
+  Parse.initialize('WEsExxhgVdwfPLRGp8wOR2EmnPm1ttDGHpOyQDX2', 'Z6K2jZvYfDJh42y3vxevpPK8BIBJCbTPXn9uuHsM');
+  Parse.serverURL = 'https://parseapi.back4app.com/';
+};
 
 const Tab = createBottomTabNavigator();
 
 const saveRoute = async (latitude, longitude) => {
-  const Route = Parse.Object.extend('Routes'); // Nome da tabela no Back4App
+  // Função para salvar a rota
+  const Route = Parse.Object.extend('Route');
   const route = new Route();
-
+  
   route.set('latitude', latitude);
   route.set('longitude', longitude);
-  route.set('timestamp', new Date());
 
   try {
     await route.save();
-    console.log('Rota salva com sucesso!');
+    Alert.alert('Sucesso', 'Localização salva com sucesso!');
   } catch (error) {
-    console.error('Erro ao salvar a rota:', error);
+    Alert.alert('Erro', 'Não foi possível salvar a localização.');
+    console.error('Erro ao salvar localização:', error);
+  }
+};
+
+const fetchRoutes = async () => {
+  const query = new Parse.Query('Route');
+  try {
+    const routes = await query.find();
+    return routes.map(route => ({
+      id: route.id,
+      latitude: route.get('latitude'),
+      longitude: route.get('longitude'),
+    }));
+  } catch (error) {
+    console.error('Erro ao buscar rotas:', error);
+    return [];
   }
 };
 
 const showAlert = async () => {
-  // Obter localização atual
-  let { status } = await getCurrentPositionAsync();
+  let { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') {
     Alert.alert('Permissão de localização necessária!');
     return;
   }
 
-  const { coords } = await getCurrentPositionAsync();
+  const { coords } = await Location.getCurrentPositionAsync({});
   const { latitude, longitude } = coords;
 
-  // Exibir alerta de confirmação
   Alert.alert(
     "Gravar Rota",
     "Você deseja gravar sua rota atual?",
@@ -49,7 +70,9 @@ const showAlert = async () => {
       },
       {
         text: "Sim",
-        onPress: () => saveRoute(latitude, longitude) // Salvar a rota
+        onPress: async () => {
+          await saveRoute(latitude, longitude);
+        }
       }
     ],
     { cancelable: false }
@@ -104,38 +127,60 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
 };
 
 export default function Routes() {
+  const [routes, setRoutes] = useState([]);
+
+  useEffect(() => {
+    // Inicialize o Parse SDK ao montar o componente
+    initializeParse();
+    
+    const fetchData = async () => {
+      const data = await fetchRoutes();
+      console.log('Rotas carregadas:', data);
+      setRoutes(data);
+    };
+    fetchData();
+  }, []);
+
   return (
-    <Tab.Navigator
-      tabBar={(props) => <CustomTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <Tab.Screen
-        name="Home"
-        component={Home}
-        options={{
-          tabBarLabel: 'Home',
+    <SafeAreaView style={{ flex: 1 }}>
+      <Tab.Navigator
+        tabBar={(props) => <CustomTabBar {...props} />}
+        screenOptions={{
+          headerShown: false,
         }}
-      />
-      <Tab.Screen
-        name="Gravar"
-        component={Gravar}
-        options={{
-          tabBarLabel: 'Gravar',
-          tabBarButton: () => null,
-        }}
-      />
-      <Tab.Screen
-        name="Listar"
-        component={Listar}
-        options={{
-          tabBarLabel: 'Listar',
-          tabBarStyle: { display: 'none' },
-        }}
-      />
-      
-    </Tab.Navigator>
+      >
+        <Tab.Screen
+          name="Home"
+          component={Home}
+          options={{
+            tabBarLabel: 'Home',
+          }}
+        />
+        <Tab.Screen
+          name="Gravar"
+          component={() => null} // Renderize null para a tela Gravar
+          options={{
+            tabBarLabel: 'Gravar',
+            tabBarButton: () => null,
+          }}
+        />
+        <Tab.Screen
+          name="Listar"
+          component={Listar}
+          options={{
+            tabBarLabel: 'Listar',
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+      </Tab.Navigator>
+      <View>
+        {routes.map(route => (
+          <Text key={route.id}>
+            Latitude: {route.latitude}, Longitude: {route.longitude}
+          </Text>
+        ))}
+      </View>
+    </SafeAreaView>
   );
 }
 
